@@ -1,4 +1,5 @@
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60; // Set max duration to 60s for Vercel Hobby
 
 import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
@@ -162,7 +163,22 @@ Do NOT include any markdown formatting, headers, or extra explanation. Just the 
     console.error('[/api/generate]', err);
     
     // If we have a generationId, mark as failed (refund credits)
-    // This is handled by the catch block calling /api/v1/complete with FAILED
+    if (generationId) {
+      try {
+        await fetch(`${CAPARISON_BASE_URL}/api/v1/complete`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            apiKey: CAPARISON_API_KEY,
+            generationId,
+            status: 'FAILED',
+            error: err.message,
+          }),
+        });
+      } catch (refundErr) {
+        console.error('Failed to refund credits:', refundErr);
+      }
+    }
 
     return NextResponse.json({ 
       error: 'Script generation failed. Please try again.',
