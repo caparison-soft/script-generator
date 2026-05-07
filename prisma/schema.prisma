@@ -1,0 +1,20 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Script {
+  id           String   @id @default(uuid())
+  userId       String   @map("user_id")       // Caparison Lab user ID
+  userEmail    String   @map("user_email")
+  topic        String
+  duration     Int                             // in minutes
+  scriptText   String   @map("script_text")   // full script with timestamps
+  generationId String?  @map("generation_id") // Caparison Lab generation ID
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@map("scripts")
+}
