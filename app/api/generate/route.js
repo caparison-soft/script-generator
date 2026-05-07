@@ -28,6 +28,9 @@ function formatTimestamp(seconds) {
 }
 
 export async function POST(request) {
+  let generationId = null;
+  let skipCredits = false;
+
   try {
     // 1. Auth check
     const cookieStore = await cookies();
@@ -51,8 +54,7 @@ export async function POST(request) {
     const config = DURATION_CONFIG[durationMins] || DURATION_CONFIG[3];
 
     // 2. Call Caparison Lab credit API (deduct credits)
-    let generationId = null;
-    let skipCredits = false;
+
 
     if (!CAPARISON_API_KEY || CAPARISON_API_KEY === 'PASTE_YOUR_API_KEY_FROM_ADMIN_PANEL_HERE') {
       // Development mode — skip credit check
