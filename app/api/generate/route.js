@@ -6,8 +6,6 @@ import { cookies } from 'next/headers';
 import { createServerSupabaseClient } from '../../../lib/supabase';
 import { prisma } from '../../../lib/db';
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-
 const CAPARISON_BASE_URL = process.env.CAPARISON_BASE_URL;
 const CAPARISON_API_KEY = process.env.CAPARISON_API_KEY;
 
@@ -88,6 +86,7 @@ export async function POST(request) {
     }
 
     // 3. Generate script with Gemini
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
     const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
     const prompt = `You are a professional video scriptwriter. Create a detailed, engaging video script for a ${durationMins}-minute video about: "${topic}".
