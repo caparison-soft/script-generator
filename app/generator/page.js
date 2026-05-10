@@ -97,6 +97,7 @@ export default function GeneratorPage() {
   const [showHistory, setShowHistory] = useState(false);
   const [toast, setToast] = useState(null);
   const [activeTab, setActiveTab] = useState('with'); // 'with' or 'without'
+  const [pricing, setPricing] = useState(null); // { pricingRules: {}, defaultCost: 10 }
   const textareaRef = useRef(null);
 
   // Auth check
@@ -106,7 +107,20 @@ export default function GeneratorPage() {
       setUser(session.user);
       fetchCredits(session.access_token);
     });
+    // Fetch pricing rules
+    fetch('/api/pricing').then(r => r.json()).then(data => {
+      if (data.ok) setPricing(data);
+    }).catch(() => {});
   }, []);
+
+  // Helper to get credit cost for a given duration
+  const getCostForDuration = (dur) => {
+    if (!pricing) return null;
+    if (pricing.pricingRules && pricing.pricingRules[String(dur)] !== undefined) {
+      return pricing.pricingRules[String(dur)];
+    }
+    return pricing.defaultCost || null;
+  };
 
   const fetchCredits = async (token) => {
     try {
@@ -383,6 +397,20 @@ export default function GeneratorPage() {
                 >
                   <span>{d.label}</span>
                   <span style={{ fontSize: '11px', opacity: 0.6 }}>{d.desc}</span>
+                  {getCostForDuration(d.value) !== null && (
+                    <span style={{
+                      fontSize: '10px',
+                      fontWeight: 700,
+                      color: duration === d.value ? '#fbbf24' : 'rgba(251,191,36,0.6)',
+                      display: 'flex', alignItems: 'center', gap: '3px',
+                      marginTop: '1px',
+                    }}>
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 18V6"/>
+                      </svg>
+                      {getCostForDuration(d.value)} cr
+                    </span>
+                  )}
                 </button>
               ))}
             </div>
@@ -405,7 +433,7 @@ export default function GeneratorPage() {
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
                 </svg>
-                Generate Script ({duration} min)
+                Generate Script ({duration} min{getCostForDuration(duration) !== null ? ` · ${getCostForDuration(duration)} credits` : ''})
               </>
             )}
           </button>

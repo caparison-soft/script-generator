@@ -53,8 +53,7 @@ export async function POST(request) {
     const durationMins = parseInt(duration) || 3;
     const config = DURATION_CONFIG[durationMins] || DURATION_CONFIG[3];
 
-    // 2. Call Caparison Lab credit API (deduct credits)
-
+    // 2. Fetch dynamic pricing from Caparison Lab and deduct credits
 
     if (!CAPARISON_API_KEY || CAPARISON_API_KEY === 'PASTE_YOUR_API_KEY_FROM_ADMIN_PANEL_HERE') {
       // Development mode — skip credit check
@@ -62,7 +61,25 @@ export async function POST(request) {
       console.warn('⚠️  CAPARISON_API_KEY not set — running without credit deduction');
     }
 
+    let creditCost = 10; // fallback default
+
     if (!skipCredits) {
+      // Fetch dynamic pricing rules from platform
+      try {
+        const pricingRes = await fetch(`${CAPARISON_BASE_URL}/api/v1/pricing`, {
+          headers: { Authorization: `Bearer ${CAPARISON_API_KEY}` },
+        });
+        const pricingData = await pricingRes.json();
+
+        if (pricingData.ok && pricingData.pricingRules) {
+          creditCost = pricingData.pricingRules[String(durationMins)] || pricingData.defaultCost || 10;
+        } else {
+          creditCost = pricingData.defaultCost || 10;
+        }
+      } catch (pricingErr) {
+        console.warn('Failed to fetch pricing, using default:', pricingErr.message);
+      }
+
       const creditRes = await fetch(`${CAPARISON_BASE_URL}/api/v1/use`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -70,7 +87,7 @@ export async function POST(request) {
           apiKey: CAPARISON_API_KEY,
           userToken,
           inputData: { topic, duration: durationMins },
-          // creditCost is set from admin panel in app config
+          creditCost,
         }),
       });
 
