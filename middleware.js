@@ -27,12 +27,20 @@ export async function middleware(request) {
 
   // Protect /generator
   if (request.nextUrl.pathname.startsWith('/generator') && !session) {
-    return NextResponse.redirect(new URL('/login', request.url));
+    const mainLoginUrl = new URL('https://www.caparisonlab.com/login');
+    mainLoginUrl.searchParams.set('next', request.url);
+    return NextResponse.redirect(mainLoginUrl);
   }
 
-  // Redirect logged-in users away from login
-  if (request.nextUrl.pathname === '/login' && session) {
-    return NextResponse.redirect(new URL('/generator', request.url));
+  // Redirect /login to main app login
+  if (request.nextUrl.pathname === '/login') {
+    if (session) {
+      return NextResponse.redirect(new URL('/generator', request.url));
+    } else {
+      const mainLoginUrl = new URL('https://www.caparisonlab.com/login');
+      mainLoginUrl.searchParams.set('next', new URL('/generator', request.url).toString());
+      return NextResponse.redirect(mainLoginUrl);
+    }
   }
 
   return response;
