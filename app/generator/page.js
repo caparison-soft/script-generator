@@ -136,6 +136,12 @@ export default function GeneratorPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ topic: topic.trim(), duration }),
       });
+
+      if (res.status === 401) {
+        window.location.href = `https://www.caparisonlab.com/login?next=${encodeURIComponent(window.location.href)}`;
+        return;
+      }
+
       const data = await res.json();
 
       if (!data.ok) {
@@ -171,6 +177,10 @@ export default function GeneratorPage() {
   const fetchHistory = async () => {
     try {
       const res = await fetch('/api/scripts');
+      if (res.status === 401) {
+        window.location.href = `https://www.caparisonlab.com/login?next=${encodeURIComponent(window.location.href)}`;
+        return;
+      }
       const data = await res.json();
       setHistory(Array.isArray(data) ? data : []);
     } catch {}
