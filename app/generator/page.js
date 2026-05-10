@@ -266,12 +266,14 @@ export default function GeneratorPage() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <div style={{
                 width: '32px', height: '32px',
-                background: 'linear-gradient(135deg, #6366f1, #a855f7)',
+                background: user.user_metadata?.avatar_url
+                  ? `url(${user.user_metadata.avatar_url}) center/cover no-repeat`
+                  : 'linear-gradient(135deg, #6366f1, #a855f7)',
                 borderRadius: '50%',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: '13px', fontWeight: 700, color: 'white',
               }}>
-                {user.email?.charAt(0).toUpperCase()}
+                {!user.user_metadata?.avatar_url && user.email?.charAt(0).toUpperCase()}
               </div>
               <button onClick={handleLogout} className="btn btn-ghost btn-sm" style={{ fontSize: '13px', color: 'var(--text-dim)' }}>
                 Logout
