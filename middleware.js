@@ -10,6 +10,7 @@ export async function middleware(request) {
     process.env.NEXT_PUBLIC_SUPABASE_URL,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     {
+      cookieOptions: process.env.NODE_ENV === 'production' ? { domain: '.caparisonlab.com' } : {},
       cookies: {
         getAll() { return request.cookies.getAll(); },
         setAll(cookiesToSet) {
