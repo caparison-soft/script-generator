@@ -213,9 +213,10 @@ export default function GeneratorPage() {
     setShowHistory(false);
   };
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    router.push('/login');
+  const handleGoToDashboard = () => {
+    if (confirm("Do you want to go to the dashboard? This app will be closed.")) {
+      window.location.href = (process.env.NEXT_PUBLIC_CAPARISON_BASE_URL || 'https://www.caparisonlab.com') + '/dashboard';
+    }
   };
 
   const scriptWithout = script ? script.replace(/\[\d{2}:\d{2}\]\s*/g, '').trim() : '';
@@ -289,8 +290,8 @@ export default function GeneratorPage() {
               }}>
                 {!user.user_metadata?.avatar_url && user.email?.charAt(0).toUpperCase()}
               </div>
-              <button onClick={handleLogout} className="btn btn-ghost btn-sm" style={{ fontSize: '13px', color: 'var(--text-dim)' }}>
-                Logout
+              <button onClick={handleGoToDashboard} className="btn btn-ghost btn-sm" style={{ fontSize: '13px', color: 'var(--text-dim)' }}>
+                Dashboard
               </button>
             </div>
           )}
