@@ -1,5 +1,5 @@
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 import { NextResponse, after } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
@@ -135,7 +135,21 @@ Content for this section...
 
 Do NOT include any markdown formatting, headers, or extra explanation. Just the script with timestamps.`;
 
-    const result = await model.generateContent(prompt);
+    let result;
+    const MAX_RETRIES = 3;
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        result = await model.generateContent(prompt);
+        break;
+      } catch (geminiErr) {
+        const is503 = geminiErr.message?.includes('503') || geminiErr.status === 503;
+        if (is503 && attempt < MAX_RETRIES) {
+          await new Promise(r => setTimeout(r, attempt * 3000));
+          continue;
+        }
+        throw geminiErr;
+      }
+    }
 
     // Check for safety/content blocks before calling .text()
     const finishReason = result.response?.candidates?.[0]?.finishReason;
@@ -184,10 +198,13 @@ Do NOT include any markdown formatting, headers, or extra explanation. Just the 
     }
 
     const isContentBlock = err.message?.includes('safety filters') || err.message?.includes('blocked');
+    const isOverloaded = err.message?.includes('503') || err.message?.includes('high demand') || err.message?.includes('Service Unavailable');
     return NextResponse.json({
       error: isContentBlock
         ? err.message
-        : 'Script generation failed. Please try again.',
+        : isOverloaded
+          ? 'Gemini AI is temporarily overloaded. Please try again in a moment.'
+          : 'Script generation failed. Please try again.',
       details: err.message,
     }, { status: 500 });
   }
