@@ -158,7 +158,7 @@ Do NOT include any markdown formatting, headers, or extra explanation. Just the 
 
     // 5. Mark generation complete in Caparison Lab
     if (generationId) {
-      fetch(`${CAPARISON_BASE_URL}/api/v1/complete`, {
+      await fetch(`${CAPARISON_BASE_URL}/api/v1/complete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
