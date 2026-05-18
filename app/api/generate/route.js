@@ -106,9 +106,9 @@ export async function POST(request) {
       generationId = creditData.generationId;
     }
 
-    // 3. Generate with Gemini
+    // 3. Generate with Gemini (fallback chain: 2.5-flash → 2.0-flash → 1.5-flash)
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    const MODEL_CHAIN = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
 
     const prompt = `You are a professional video scriptwriter. Create a detailed, engaging video script for a ${durationMins}-minute video about: "${topic}".
 
@@ -136,20 +136,24 @@ Content for this section...
 Do NOT include any markdown formatting, headers, or extra explanation. Just the script with timestamps.`;
 
     let result;
-    const MAX_RETRIES = 3;
-    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    let lastErr;
+    for (const modelName of MODEL_CHAIN) {
       try {
+        const model = genAI.getGenerativeModel({ model: modelName });
         result = await model.generateContent(prompt);
+        console.log(`[/api/generate] used model: ${modelName}`);
         break;
       } catch (geminiErr) {
         const is503 = geminiErr.message?.includes('503') || geminiErr.status === 503;
-        if (is503 && attempt < MAX_RETRIES) {
-          await new Promise(r => setTimeout(r, attempt * 3000));
+        if (is503) {
+          console.warn(`[/api/generate] ${modelName} returned 503, trying next model`);
+          lastErr = geminiErr;
           continue;
         }
         throw geminiErr;
       }
     }
+    if (!result) throw lastErr;
 
     // Check for safety/content blocks before calling .text()
     const finishReason = result.response?.candidates?.[0]?.finishReason;
