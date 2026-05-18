@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60; // Set max duration to 60s for Vercel Hobby
+export const maxDuration = 60;
 
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { cookies } from 'next/headers';
 import { createServerSupabaseClient } from '../../../lib/supabase';
@@ -10,7 +10,6 @@ import { prisma } from '../../../lib/db';
 const CAPARISON_BASE_URL = process.env.CAPARISON_BASE_URL;
 const CAPARISON_API_KEY = process.env.CAPARISON_API_KEY;
 
-// Duration → approximate word count mapping
 const DURATION_CONFIG = {
   1:  { words: 150,  segments: 3  },
   2:  { words: 300,  segments: 5  },
@@ -21,10 +20,17 @@ const DURATION_CONFIG = {
   15: { words: 2200, segments: 22 },
 };
 
-function formatTimestamp(seconds) {
-  const m = Math.floor(seconds / 60).toString().padStart(2, '0');
-  const s = (seconds % 60).toString().padStart(2, '0');
-  return `[${m}:${s}]`;
+async function notifyHub(generationId, status, extra = {}) {
+  if (!generationId || !CAPARISON_BASE_URL) return;
+  try {
+    await fetch(`${CAPARISON_BASE_URL}/api/v1/complete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apiKey: CAPARISON_API_KEY, generationId, status, ...extra }),
+    });
+  } catch (e) {
+    console.error('[notifyHub] failed:', e.message);
+  }
 }
 
 export async function POST(request) {
@@ -32,7 +38,7 @@ export async function POST(request) {
   let skipCredits = false;
 
   try {
-    // 1. Auth check
+    // 1. Auth
     const cookieStore = await cookies();
     const supabase = await createServerSupabaseClient(cookieStore);
     const { data: { session } } = await supabase.auth.getSession();
@@ -43,7 +49,6 @@ export async function POST(request) {
 
     const userToken = session.access_token;
     const userEmail = session.user.email;
-
     const { topic, duration } = await request.json();
 
     if (!topic?.trim()) {
@@ -53,28 +58,24 @@ export async function POST(request) {
     const durationMins = parseInt(duration) || 3;
     const config = DURATION_CONFIG[durationMins] || DURATION_CONFIG[3];
 
-    // 2. Fetch dynamic pricing from Caparison Lab and deduct credits
-
+    // 2. Credits
     if (!CAPARISON_API_KEY || CAPARISON_API_KEY === 'PASTE_YOUR_API_KEY_FROM_ADMIN_PANEL_HERE') {
-      // Development mode — skip credit check
       skipCredits = true;
-      console.warn('⚠️  CAPARISON_API_KEY not set — running without credit deduction');
+      console.warn('⚠️  CAPARISON_API_KEY not set — skipping credit deduction');
     }
 
-    let creditCost = 10; // fallback default
+    let creditCost = 10;
 
     if (!skipCredits) {
-      // Fetch dynamic pricing rules from platform
       try {
         const pricingRes = await fetch(`${CAPARISON_BASE_URL}/api/v1/pricing`, {
           headers: { Authorization: `Bearer ${CAPARISON_API_KEY}` },
         });
         const pricingData = await pricingRes.json();
-
         if (pricingData.ok && pricingData.pricingRules) {
-          creditCost = pricingData.pricingRules[String(durationMins)] || pricingData.defaultCost || 10;
+          creditCost = pricingData.pricingRules[String(durationMins)] ?? pricingData.defaultCost ?? 10;
         } else {
-          creditCost = pricingData.defaultCost || 10;
+          creditCost = pricingData.defaultCost ?? 10;
         }
       } catch (pricingErr) {
         console.warn('Failed to fetch pricing, using default:', pricingErr.message);
@@ -105,7 +106,7 @@ export async function POST(request) {
       generationId = creditData.generationId;
     }
 
-    // 3. Generate script with Gemini
+    // 3. Generate with Gemini
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
     const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
@@ -129,45 +130,41 @@ Your opening text here...
 [00:45] First Main Point
 Content for this section...
 
-[01:30] Second Main Point  
+[01:30] Second Main Point
 Content for this section...
 
 Do NOT include any markdown formatting, headers, or extra explanation. Just the script with timestamps.`;
 
     const result = await model.generateContent(prompt);
+
+    // Check for safety/content blocks before calling .text()
+    const finishReason = result.response?.candidates?.[0]?.finishReason;
+    if (finishReason && ['SAFETY', 'RECITATION', 'LANGUAGE'].includes(finishReason)) {
+      throw new Error(`Content blocked by Gemini safety filters (${finishReason}). Please try a different topic.`);
+    }
+
     const scriptText = result.response.text().trim();
 
-    // 4. Save to Script Generator's own database
+    if (!scriptText) {
+      throw new Error('Gemini returned an empty response. Please try again.');
+    }
+
+    // 4. Save to DB (non-critical)
     const userId = session.user.id;
-    
     let savedScript = null;
     try {
       savedScript = await prisma.script.create({
-        data: {
-          userId,
-          userEmail,
-          topic,
-          duration: durationMins,
-          scriptText,
-          generationId,
-        },
+        data: { userId, userEmail, topic, duration: durationMins, scriptText, generationId },
       });
     } catch (dbErr) {
       console.error('DB save failed (non-critical):', dbErr.message);
     }
 
-    // 5. Mark generation complete in Caparison Lab
+    // 5. Notify Hub AFTER the response is sent — avoids blocking and survives Vercel timeout
     if (generationId) {
-      await fetch(`${CAPARISON_BASE_URL}/api/v1/complete`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          apiKey: CAPARISON_API_KEY,
-          generationId,
-          status: 'COMPLETED',
-          metadata: { topic, duration: durationMins, wordCount: scriptText.split(' ').length },
-        }),
-      }).catch(console.error);
+      after(() => notifyHub(generationId, 'COMPLETED', {
+        metadata: { topic, duration: durationMins, wordCount: scriptText.split(' ').length },
+      }));
     }
 
     return NextResponse.json({
@@ -179,28 +176,18 @@ Do NOT include any markdown formatting, headers, or extra explanation. Just the 
     });
 
   } catch (err) {
-    console.error('[/api/generate]', err);
-    
-    // If we have a generationId, mark as failed (refund credits)
+    console.error('[/api/generate] error:', err.message);
+
+    // Notify Hub of failure (refunds credits)
     if (generationId) {
-      try {
-        await fetch(`${CAPARISON_BASE_URL}/api/v1/complete`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            apiKey: CAPARISON_API_KEY,
-            generationId,
-            status: 'FAILED',
-            error: err.message,
-          }),
-        });
-      } catch (refundErr) {
-        console.error('Failed to refund credits:', refundErr);
-      }
+      await notifyHub(generationId, 'FAILED', { error: err.message });
     }
 
-    return NextResponse.json({ 
-      error: 'Script generation failed. Please try again.',
+    const isContentBlock = err.message?.includes('safety filters') || err.message?.includes('blocked');
+    return NextResponse.json({
+      error: isContentBlock
+        ? err.message
+        : 'Script generation failed. Please try again.',
       details: err.message,
     }, { status: 500 });
   }
